@@ -1,37 +1,45 @@
 /* eslint-disable no-console */
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
 
 const [sourcePath, destinationPath] = process.argv.slice(2);
 
-const moveFile = () => {
+const moveFile = async () => {
   if (!sourcePath || !destinationPath) {
     console.error('No source or destination provided');
 
     return;
   }
 
-  if (!fs.existsSync(sourcePath)) {
+  try {
+    await fs.access(sourcePath);
+  } catch {
     console.error("Source file doesn't exist");
 
     return;
   }
 
   let destinationPathFull = destinationPath;
-  let isDestinationDirectory = false;
 
   try {
-    isDestinationDirectory = fs.lstatSync(destinationPath).isDirectory();
+    const destStat = await fs.lstat(destinationPath);
+
+    if (destStat.isDirectory()) {
+      destinationPathFull = path.join(
+        destinationPath,
+        path.basename(sourcePath),
+      );
+    }
   } catch (err) {
-    if (err.code !== 'ENOENT') {
+    if (err.code === 'ENOENT' && destinationPath.endsWith('/')) {
+      console.error("Destination directory doesn't exist");
+
+      return;
+    } else if (err.code !== 'ENOENT') {
       console.error('Error reading destination path:', err);
 
       return;
     }
-  }
-
-  if (isDestinationDirectory) {
-    destinationPathFull = path.join(destinationPath, path.basename(sourcePath));
   }
 
   if (path.resolve(sourcePath) === path.resolve(destinationPathFull)) {
@@ -40,23 +48,13 @@ const moveFile = () => {
     return;
   }
 
-  fs.copyFile(sourcePath, destinationPathFull, (err) => {
-    if (err) {
-      console.error(err);
-
-      return;
-    }
-
-    fs.rm(sourcePath, (error) => {
-      if (error) {
-        console.error(error);
-
-        return;
-      }
-
-      console.log('The file was moved successfully.');
-    });
-  });
+  try {
+    await fs.copyFile(sourcePath, destinationPathFull);
+    await fs.rm(sourcePath);
+    console.log('The file was moved successfully.');
+  } catch (err) {
+    console.error('Error moving file', err);
+  }
 };
 
 moveFile();
